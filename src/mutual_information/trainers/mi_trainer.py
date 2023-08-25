@@ -11,6 +11,7 @@ from mutual_information.data.dataloaders import ContrastiveMultivariateGaussianL
 from mutual_information.models.binary_classifier_config import BaseBinaryClassifierConfig
 from mutual_information.configs.mi_config import MutualInformationConfig
 from mutual_information.losses.contrastive_loss import contrastive_loss
+from mutual_information.models.mutual_information import MutualInformationEstimator
 
 class MutualInformationTrainer:
 
@@ -18,21 +19,24 @@ class MutualInformationTrainer:
 
     def __init__(self,
                  config: MutualInformationConfig,
-                 contrastive_dataloader:ContrastiveMultivariateGaussianLoader,
-                 binary_classifier:BaseBinaryClassifier):
+                 contrastive_dataloader:ContrastiveMultivariateGaussianLoader=None,
+                 binary_classifier:BaseBinaryClassifier=None):
 
         self.config = config
         self.learning_rate = config.trainer.learning_rate
         self.number_of_epochs = config.trainer.number_of_epochs
         self.device = torch.device(config.trainer.device)
-
-        self.contrastive_dataloader = contrastive_dataloader
         self.constrastive_loss = contrastive_loss
 
-        self.binary_classifier = binary_classifier
-        self.binary_classifier.to(self.device)
-
-        self.contrastive_dataloader = contrastive_dataloader
+        if binary_classifier is not None:
+            self.contrastive_dataloader = contrastive_dataloader
+            self.binary_classifier = binary_classifier
+            self.binary_classifier.to(self.device)
+        else:
+            MIE = MutualInformationEstimator()
+            MIE.create_new_from_config(self.config,self.device)
+            self.contrastive_dataloader = MIE.dataloader
+            self.binary_classifier = MIE.binary_classifier
 
     def parameters_info(self):
         print("# ==================================================")

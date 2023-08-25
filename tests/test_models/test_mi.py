@@ -28,32 +28,31 @@ class TestMITrainer(unittest.TestCase):
     def setUp(self):
         self.config = MutualInformationConfig(experiment_name='mi',
                                               experiment_type='multivariate_gaussian',
-                                              experiment_indentifier="mi_trainer_unittest",
+                                              experiment_indentifier="mi_unittest",
                                               delete=True)
         self.config.dataloader = ContrastiveMultivariateGaussianLoaderConfig(sample_size=1000,
                                                                              batch_size=32)
         self.config.binary_classifier = BaseBinaryClassifierConfig(hidden_size=40)
-        self.config.trainer = MITrainerConfig(number_of_epochs=100,
-                                              save_model_epochs=25)
-        self.config.initialize_new_experiment()
-        self.contrastive_dataloader = load_dataloader(self.config)
-        self.binary_classifier = load_binary_classifier(self.config)
+        self.config.trainer = MITrainerConfig(number_of_epochs=5,
+                                              save_model_epochs=2)
+        self.MI = MutualInformationEstimator()
 
 
     def test_trainer_setup(self):
-        MIT = MutualInformationTrainer(self.config,
-                                       self.contrastive_dataloader,
-                                       self.binary_classifier)
-        MIT.train()
+        self.MI.create_new_from_config(self.config)
 
-        binary_classifier, dataloader = load_experiments_configuration(experiment_name='mi',
-                                                                       experiment_type='multivariate_gaussian',
-                                                                       experiment_indentifier="mi_trainer_unittest")
-        databatch = next(dataloader.train().__iter__())
-        x_join = databatch["join"]
-        forward_classifier = binary_classifier(x_join)
-        print(forward_classifier.shape)
+#    @unittest.skip
+    def test_load(self):
+        MIE = MutualInformationEstimator()
+        MIE.load_results_from_directory(experiment_name='mi',
+                                        experiment_type='multivariate_gaussian',
+                                        experiment_indentifier="test",
+                                        checkpoint=None)
+        estimate = MIE.MI_Estimate()
+        real_value = MIE.dataloader.mutual_information()
+        print("estimate: {0} real: {1}".format(estimate.item(),real_value.item()))
 
 
 if __name__=="__main__":
     unittest.main()
+

@@ -7,7 +7,6 @@ from mutual_information import results_path
 import subprocess
 import time
 
-
 def get_git_revisions_hash():
     hashes = []
     hashes.append(subprocess.check_output(['git', 'rev-parse', 'HEAD']))
@@ -45,10 +44,13 @@ class ExperimentFiles:
             if self.delete:
                 shutil.rmtree(self.results_dir)
                 os.makedirs(self.results_dir)
+            else:
+                raise Exception("Folder Exist no Experiments Created Set Delete to True")
 
         self.tensorboard_path = os.path.join(self.results_dir, "tensorboard")
         if os.path.isdir(self.tensorboard_path) and self.delete:
             shutil.rmtree(self.tensorboard_path)
+
         if not os.path.isdir(self.tensorboard_path):
             os.makedirs(self.tensorboard_path)
 
