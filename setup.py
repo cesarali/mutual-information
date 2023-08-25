@@ -1,9 +1,9 @@
 import os
 import re
 import subprocess
-
 import setuptools
 
+name_of_repo = "mutual_information"
 
 def load_requirements():
     try:
@@ -18,7 +18,7 @@ try:
     with open("README.md", "r") as f:
         long_description = f.read()
 except:
-    long_description = "# mutual_information"
+    long_description = "# {0}".format(name_of_repo)
 
 # make version string
 git_describe = "git describe --tags --always --dirty"
@@ -47,11 +47,11 @@ elif (git_description := subprocess.run(git_describe, capture_output=True, shell
         version = "0.0.0+commit" + git_description.stdout
 
 setuptools.setup(
-    name="mutual_information",
+    name="{0}".format(name_of_repo),
     version=version if version else "0.0.0+unknownversion",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="git@github.com:cesarali/mutual_information.git",
+    url="git@github.com:cesarali/{0}.git".format(name_of_repo),
     packages=setuptools.find_packages("src"),
     package_dir={"": "src"},
     classifiers=[],
