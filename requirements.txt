@@ -1,0 +1,8 @@
+pandas==2.0.2
+tensorboard
+numpy
+scipy
+tqdm
+ipython
+matplotlib
+
