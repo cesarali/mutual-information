@@ -11,6 +11,7 @@ from mutual_information.data.dataloaders import ContrastiveMultivariateGaussianL
 from mutual_information.models.binary_classifier_config import BaseBinaryClassifierConfig
 from mutual_information.configs.mi_config import MutualInformationConfig
 from mutual_information.losses.contrastive_loss import contrastive_loss
+from mutual_information.losses.mine import mine_loss
 from mutual_information.models.mutual_information import MutualInformationEstimator
 
 class MutualInformationTrainer:
@@ -26,7 +27,12 @@ class MutualInformationTrainer:
         self.learning_rate = config.trainer.learning_rate
         self.number_of_epochs = config.trainer.number_of_epochs
         self.device = torch.device(config.trainer.device)
-        self.constrastive_loss = contrastive_loss
+        self.loss_type = config.trainer.loss_type
+
+        if self.loss_type == "mine":
+            self.loss = mine_loss
+        elif self.loss_type == "contrastive":
+            self.loss = contrastive_loss
 
         if binary_classifier is not None:
             self.contrastive_dataloader = contrastive_dataloader
@@ -59,7 +65,7 @@ class MutualInformationTrainer:
 
     def train_step(self,data_batch,number_of_training_step):
         data_batch = self.preprocess_data(data_batch)
-        loss = self.constrastive_loss(data_batch,self.binary_classifier)
+        loss = self.loss(data_batch,self.binary_classifier)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -71,7 +77,7 @@ class MutualInformationTrainer:
     def test_step(self,data_batch):
         with torch.no_grad():
             data_batch = self.preprocess_data(data_batch)
-            loss_ = self.constrastive_loss(data_batch, self.binary_classifier)
+            loss_ = self.loss(data_batch, self.binary_classifier)
             return loss_
 
     def initialize(self):
@@ -81,7 +87,7 @@ class MutualInformationTrainer:
         self.optimizer = Adam(self.binary_classifier.parameters(),lr=self.learning_rate)
         data_batch = next(self.contrastive_dataloader.train().__iter__())
         data_batch = self.preprocess_data(data_batch)
-        initial_loss = self.constrastive_loss(data_batch,self.binary_classifier)
+        initial_loss = self.loss(data_batch,self.binary_classifier)
 
         assert torch.isnan(initial_loss).any() == False
         assert torch.isinf(initial_loss).any() == False

@@ -10,13 +10,18 @@ class BaseBinaryClassifier(nn.Module):
         self.config = config
         input_size = self.config.input_size
         hidden_size = self.config.hidden_size
-        output_transformation_str = self.config.output_transformation
+        self.output_transformation_str = self.config.output_transformation
 
         self.layer1 = nn.Linear(input_size, hidden_size)
         self.layer2 = nn.Linear(hidden_size, 1)
-        self.output_transformation = torch.sigmoid if output_transformation_str == "sigmoid" else lambda x : x
 
     def forward(self, x):
         x = torch.relu(self.layer1(x))
-        x = self.output_transformation(self.layer2(x))
+        if self.output_transformation_str is "sigmoid":
+            x = torch.sigmoid(self.layer2(x))
+        elif self.output_transformation_str is "identity":
+            x = self.layer2(x)
+        else:
+            raise Exception("Transformation not Implemented!")
+
         return x

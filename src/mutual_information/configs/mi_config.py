@@ -74,6 +74,12 @@ class MutualInformationConfig:
 
     def align_configurations(self):
         self.binary_classifier.input_size = self.dataloader.dimensions_per_variable*self.dataloader.number_of_variables
+        if self.trainer.loss_type == "mine":
+            self.binary_classifier.output_transformation = "identity"
+        elif self.trainer.loss_type == "contrastive":
+            self.binary_classifier.output_transformation = "sigmoid"
+        else:
+            raise Exception("Loss Not Implemented")
 
     def save_config(self):
         config_as_dict = asdict(self)
