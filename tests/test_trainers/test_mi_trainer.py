@@ -26,15 +26,19 @@ class TestMITrainer(unittest.TestCase):
     read_config = MutualInformationConfig
 
     def setUp(self):
+        self.experiment_indentifier = "mi_trainer_big"
         self.config = MutualInformationConfig(experiment_name='mi',
                                               experiment_type='multivariate_gaussian',
-                                              experiment_indentifier="mi_trainer_unittest",
+                                              experiment_indentifier=self.experiment_indentifier,
                                               delete=True)
         self.config.dataloader = ContrastiveMultivariateGaussianLoaderConfig(sample_size=1000,
-                                                                             batch_size=32)
-        self.config.binary_classifier = BaseBinaryClassifierConfig(hidden_size=40)
-        self.config.trainer = MITrainerConfig(number_of_epochs=100,
+                                                                             batch_size=32,
+                                                                             data_set="example_big",
+                                                                             delete_data=False)
+        self.config.binary_classifier = BaseBinaryClassifierConfig(hidden_size=100)
+        self.config.trainer = MITrainerConfig(number_of_epochs=500,
                                               save_model_epochs=25)
+
         self.config.initialize_new_experiment()
         self.contrastive_dataloader = load_dataloader(self.config)
         self.binary_classifier = load_binary_classifier(self.config)
@@ -48,7 +52,8 @@ class TestMITrainer(unittest.TestCase):
 
         binary_classifier, dataloader = load_experiments_configuration(experiment_name='mi',
                                                                        experiment_type='multivariate_gaussian',
-                                                                       experiment_indentifier="mi_trainer_unittest")
+                                                                       experiment_indentifier=self.experiment_indentifier)
+
         databatch = next(dataloader.train().__iter__())
         x_join = databatch["join"]
         forward_classifier = binary_classifier(x_join)

@@ -1,4 +1,7 @@
+import os
 import torch
+
+from pathlib import Path
 from pprint import pprint
 from torch import matmul as m
 import torch.nn.functional as F
@@ -72,10 +75,20 @@ from dataclasses import dataclass
 @dataclass
 class ContrastiveMultivariateGaussianLoaderConfig:
     name:str = "ContrastiveMultivariateGaussianLoader"
+    data_set:str = "example"
+    dataloader_data_dir:str = None
+
     dimensions_per_variable: int = 2
     number_of_variables: int = 2
     batch_size: int = 32
     sample_size: int = 300
+    delete_data:bool = False
+
+    def __post_init__(self):
+        from mutual_information import data_path
+        self.dataloader_data_dir = os.path.join(data_path,"raw",self.name)
+        self.dataloader_data_dir_file = os.path.join(self.dataloader_data_dir,self.data_set+".tr")
+
 
 class ContrastiveMultivariateGaussianLoader(BaseDataLoader):
     """
@@ -89,10 +102,40 @@ class ContrastiveMultivariateGaussianLoader(BaseDataLoader):
         self.total_dimensions = self.dimensions_per_variable * self.number_of_variables
         self.sample_size = config.sample_size
         self.batch_size = config.batch_size
+        self.delete_data = config.delete_data
 
-        sample_join,sample_indendent = self.sample()
-        sample = {"join":sample_join,"independent":sample_indendent}
+        self.dataloader_data_dir = config.dataloader_data_dir
+        self.dataloader_data_dir_path = Path(self.dataloader_data_dir)
+        self.dataloader_data_dir_file_path = Path(config.dataloader_data_dir_file)
+
+        sample = self.obtain_sample()
         self.define_dataset_and_dataloaders(sample,batch_size=self.batch_size)
+
+    def obtain_sample(self):
+        if self.dataloader_data_dir_file_path.exists():
+            if self.delete_data:
+                parameters, sample_join, sample_indendent = self.sample()
+                sample = {"join": sample_join, "independent": sample_indendent}
+                torch.save({"sample":sample,"parameters":parameters},
+                           self.dataloader_data_dir_file_path)
+            else:
+                parameters_and_data = torch.load(self.dataloader_data_dir_file_path)
+                sample = parameters_and_data["sample"]
+                parameters = parameters_and_data["parameters"]
+                self.mean_1 = parameters["mean_1"]
+                self.mean_2 = parameters["mean_2"]
+                self.mean_full = parameters["mean_full"]
+                self.covariance_1 = parameters["covariance_1"]
+                self.covariance_2 = parameters["covariance_2"]
+                self.covariance_full = parameters["covariance_full"]
+        else:
+            if not self.dataloader_data_dir_path.exists():
+                os.makedirs(self.dataloader_data_dir_path)
+            parameters, sample_join, sample_indendent = self.sample()
+            sample = {"join": sample_join,
+                      "independent": sample_indendent}
+            torch.save({"sample":sample,"parameters":parameters}, self.dataloader_data_dir_file_path)
+        return sample
 
     def obtain_parameters(self):
         return self.parameters_
@@ -115,7 +158,8 @@ class ContrastiveMultivariateGaussianLoader(BaseDataLoader):
         self.mean_full = torch.zeros(self.total_dimensions)
 
         covariance_full = torch.Tensor(size=(self.total_dimensions,
-                                             self.total_dimensions)).normal_(0., 1.)
+                                             self.total_dimensions)).normal_(10., 2.)
+
         self.covariance_full = m(covariance_full,covariance_full.T)
 
         self.covariance_1 = self.covariance_full[:self.dimensions_per_variable,:self.dimensions_per_variable]
@@ -130,5 +174,12 @@ class ContrastiveMultivariateGaussianLoader(BaseDataLoader):
         sample_join = normal_full.sample(sample_shape=(self.sample_size,))
         sample_indendent = torch.cat([sample_1, sample_2], dim=1)
 
-        return sample_join,sample_indendent
+        distributions_parameters = {"mean_1":self.mean_1,
+                                    "mean_2":self.mean_2,
+                                    "mean_full":self.mean_full,
+                                    "covariance_1":self.covariance_1,
+                                    "covariance_2":self.covariance_2,
+                                    "covariance_full":self.covariance_full}
+
+        return distributions_parameters,sample_join,sample_indendent
 

@@ -58,10 +58,15 @@ class MutualInformationEstimator:
             assert torch.isinf(q).any() == False
 
             #average
-            log_q = torch.log(q + EPSILON)
+            log_q = torch.log(q)
+            where_inf = torch.isinf(log_q)
+            log_q[where_inf] = 0.
+
             log_q = log_q.sum()
-            number_of_pairs += x_join.shape[0]
+            where_inf = ~where_inf
+            number_of_pairs += where_inf.int().sum()
 
         log_q_av = log_q/number_of_pairs
-        return log_q_av
+
+        return log_q,log_q_av
 

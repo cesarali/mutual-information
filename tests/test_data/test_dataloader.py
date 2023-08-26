@@ -15,7 +15,7 @@ class TestMIDataloader(unittest.TestCase):
     def setUp(self):
         self.batch_size = 23
         self.number_of_variables = 2
-        self.dimensions_per_variable = 2
+        self.dimensions_per_variable = 1
         self.expected_size = torch.Size([self.batch_size,self.dimensions_per_variable*self.number_of_variables])
 
         self.config = MutualInformationConfig(experiment_name='mi',
@@ -24,13 +24,18 @@ class TestMIDataloader(unittest.TestCase):
                                               delete=True)
         self.config.dataloader = ContrastiveMultivariateGaussianLoaderConfig(dimensions_per_variable=self.dimensions_per_variable,
                                                                              number_of_variables=self.number_of_variables,
-                                                                             sample_size=100,
-                                                                             batch_size=self.batch_size)
+                                                                             sample_size=1000,
+                                                                             batch_size=self.batch_size,
+                                                                             data_set="example_basic",
+                                                                             delete_data=True)
 
     def test_dataloader(self):
         dataloader = load_dataloader(self.config)
         databatch = next(dataloader.train().__iter__())
-
+        print("Join")
+        print(databatch['join'].shape)
+        print("Independent")
+        print(databatch['independent'].shape)
         self.assertIsNotNone(dataloader)
         self.assertEqual(self.expected_size,databatch['join'].shape)
         self.assertEqual(self.expected_size,databatch['independent'].shape)
@@ -38,10 +43,10 @@ class TestMIDataloader(unittest.TestCase):
         #for databatch in dataloader.train():
         #    print(databatch["join"].shape)
 
-
     def test_mi(self):
         dataloader = load_dataloader(self.config)
         MI = dataloader.mutual_information()
+        print(MI)
         self.assertFalse(torch.isnan(MI).all())
 
 
