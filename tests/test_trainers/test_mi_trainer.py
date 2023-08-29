@@ -26,7 +26,7 @@ class TestMITrainer(unittest.TestCase):
     read_config = MutualInformationConfig
 
     def setUp(self):
-        self.experiment_indentifier = "mi_contrastive2"
+        self.experiment_indentifier = "mi_trainer_unittest"
         self.config = MutualInformationConfig(experiment_name='mi',
                                               experiment_type='multivariate_gaussian',
                                               experiment_indentifier=self.experiment_indentifier,
@@ -36,8 +36,8 @@ class TestMITrainer(unittest.TestCase):
                                                                              data_set="example_big",
                                                                              delete_data=False)
         self.config.binary_classifier = BaseBinaryClassifierConfig(hidden_size=100)
-        self.config.trainer = MITrainerConfig(number_of_epochs=1000,
-                                              save_model_epochs=250,
+        self.config.trainer = MITrainerConfig(number_of_epochs=10,
+                                              save_model_epochs=5,
                                               loss_type="contrastive")
 
         self.config.initialize_new_experiment()

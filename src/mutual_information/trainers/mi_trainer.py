@@ -14,6 +14,7 @@ from mutual_information.configs.dynamic_mi_naive_config import DynamicMutualInfo
 from mutual_information.losses.contrastive_loss import contrastive_loss
 from mutual_information.losses.mine import mine_loss
 from mutual_information.models.mutual_information import MutualInformationEstimator
+from mutual_information.models.dynamic_mutual_information import DynamicMutualInformationNaiveEstimator
 
 class MutualInformationTrainer:
 
@@ -188,7 +189,7 @@ class DynamicMutualInformationTrainerNaive:
 
     def __init__(self,
                  config: DynamicMutualInformationNaiveConfig,
-                 contrastive_dataloader:ContrastiveMultivariateGaussianLoader=None,
+                 dataloader:CorrelationCoefficientGaussianLoader=None,
                  binary_classifier:BaseBinaryClassifier=None):
 
         self.config = config
@@ -203,14 +204,14 @@ class DynamicMutualInformationTrainerNaive:
             self.loss = contrastive_loss
 
         if binary_classifier is not None:
-            self.dataloader = contrastive_dataloader
+            self.dataloader = dataloader
             self.binary_classifier = binary_classifier
             self.binary_classifier.to(self.device)
         else:
-            MIE = MutualInformationEstimator()
-            MIE.create_new_from_config(self.config,self.device)
-            self.dataloader = MIE.dataloader
-            self.binary_classifier = MIE.binary_classifier
+            DMINE = DynamicMutualInformationNaiveEstimator()
+            DMINE.create_new_from_config(self.config,self.device)
+            self.dataloader = DMINE.dataloader
+            self.classifier_per_time = DMINE.classifier_per_time
 
     def parameters_info(self):
         print("# ==================================================")
@@ -231,48 +232,74 @@ class DynamicMutualInformationTrainerNaive:
         data_batch["independent"] = data_batch["independent"].to(self.device)
         return data_batch
 
+    def take_time_batch(self,data_batch,time_index):
+        join_timeseries = data_batch["join"]
+        independent_timeseries = data_batch["independent"]
+        time_data_batch = {"join": join_timeseries[:, [0, time_index]],
+                           "independent": independent_timeseries[:, [0, time_index]]}
+        return time_data_batch
+
     def train_step(self,data_batch,number_of_training_step):
-        data_batch = self.preprocess_data(data_batch)
-        loss = self.loss(data_batch,self.binary_classifier)
+        losses = []
+        for time_index in range(self.dataloader.number_of_time_steps):
+            data_batch = self.preprocess_data(data_batch)
+            time_data_batch = self.take_time_batch(data_batch,time_index)
 
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+            binary_classifier = self.classifier_per_time[time_index]
+            loss = self.loss(time_data_batch, binary_classifier)
 
-        self.writer.add_scalar('training loss', loss, number_of_training_step)
-        return loss
+            self.optimizers[time_index].zero_grad()
+            loss.backward()
+            self.optimizers[time_index].step()
+
+            self.writer.add_scalar('classifier{0}/training loss'.format(time_index), loss, number_of_training_step)
+            losses.append(loss)
+        return losses
 
     def test_step(self,data_batch):
         with torch.no_grad():
-            data_batch = self.preprocess_data(data_batch)
-            loss_ = self.loss(data_batch, self.binary_classifier)
-            return loss_
+            losses = []
+            for time_index in range(self.dataloader.number_of_time_steps):
+                data_batch = self.preprocess_data(data_batch)
+                time_data_batch = self.take_time_batch(data_batch, time_index)
+
+                binary_classifier = self.classifier_per_time[time_index]
+                loss = self.loss(time_data_batch, binary_classifier)
+
+                losses.append(loss)
+            return losses
 
     def initialize(self):
         from torch.utils.tensorboard import SummaryWriter
-        self.writer = SummaryWriter(self.config.experiment_files.tensorboard_path)
-
-        self.optimizer = Adam(self.binary_classifier.parameters(),lr=self.learning_rate)
         data_batch = next(self.dataloader.train().__iter__())
         data_batch = self.preprocess_data(data_batch)
-        initial_loss = self.loss(data_batch,self.binary_classifier)
 
-        assert torch.isnan(initial_loss).any() == False
-        assert torch.isinf(initial_loss).any() == False
+        self.writer = SummaryWriter(self.config.experiment_files.tensorboard_path)
+        self.optimizers = []
+        initial_losses = []
+        for time_index in range(self.dataloader.number_of_time_steps):
+            binary_classifier = self.classifier_per_time[time_index]
+            self.optimizers.append(Adam(binary_classifier.parameters(),lr=self.learning_rate))
+            time_data_batch = self.take_time_batch(data_batch,time_index)
+            initial_loss = self.loss(time_data_batch, binary_classifier)
+            assert torch.isnan(initial_loss).any() == False
+            assert torch.isinf(initial_loss).any() == False
 
-        self.save_results(self.binary_classifier,
-                          initial_loss,
+            initial_losses.append(initial_loss)
+
+        self.save_results(self.classifier_per_time,
+                          initial_losses,
                           None,
                           None,
                           None,
                           0,
                           checkpoint=True)
 
-        return initial_loss
+        return initial_losses
 
     def train(self):
         initial_loss = self.initialize()
-        best_loss = initial_loss
+        best_loss = initial_loss[1]
 
         number_of_training_step = 0
         number_of_test_step = 0
@@ -281,7 +308,8 @@ class DynamicMutualInformationTrainerNaive:
             LOSS = []
             train_loss = []
             for data_batch in self.dataloader.train():
-                loss = self.train_step(data_batch,number_of_training_step)
+                losses = self.train_step(data_batch,number_of_training_step)
+                loss = losses[1]
                 train_loss.append(loss.item())
                 LOSS.append(loss.item())
                 number_of_training_step += 1
@@ -289,14 +317,15 @@ class DynamicMutualInformationTrainerNaive:
 
             test_loss = []
             for data_batch in self.dataloader.test():
-                loss = self.test_step(data_batch)
+                losses = self.test_step(data_batch)
+                loss = losses[1]
                 test_loss.append(loss.item())
                 number_of_test_step+=1
             average_test_loss = np.asarray(test_loss).mean()
 
             # SAVE RESULTS IF LOSS DECREASES IN VALIDATION
             if average_test_loss < best_loss:
-                self.save_results(self.binary_classifier,
+                self.save_results(self.classifier_per_time,
                                   initial_loss,
                                   average_train_loss,
                                   average_test_loss,
@@ -305,7 +334,7 @@ class DynamicMutualInformationTrainerNaive:
                                   checkpoint=False)
 
             if (epoch + 1) % self.config.trainer.save_model_epochs == 0:
-                self.save_results(self.binary_classifier,
+                self.save_results(self.classifier_per_time,
                                   initial_loss,
                                   average_train_loss,
                                   average_test_loss,
@@ -313,14 +342,14 @@ class DynamicMutualInformationTrainerNaive:
                                   epoch+1,
                                   checkpoint=True)
 
-            if epoch % 10 == 0:
+            if epoch % 2 == 0:
                 print("Epoch: {}, Loss: {}".format(epoch + 1, average_train_loss))
 
         self.writer.close()
 
     def save_results(self,
-                     binary_classifier,
-                     initial_loss,
+                     classifier_per_time,
+                     initial_losses,
                      average_train_loss,
                      average_test_loss,
                      LOSS,
@@ -328,8 +357,8 @@ class DynamicMutualInformationTrainerNaive:
                      checkpoint=False):
         if checkpoint:
             RESULTS = {
-                "binary_classifier":binary_classifier,
-                "initial_loss":initial_loss,
+                "classifier_per_time":classifier_per_time,
+                "initial_loss":initial_losses,
                 "average_train_loss":average_train_loss,
                 "average_test_loss":average_test_loss,
                 "LOSS":LOSS
@@ -337,8 +366,8 @@ class DynamicMutualInformationTrainerNaive:
             torch.save(RESULTS,self.config.experiment_files.best_model_path_checkpoint.format(epoch))
         else:
             RESULTS = {
-                "binary_classifier":binary_classifier,
-                "initial_loss":initial_loss,
+                "classifier_per_time":classifier_per_time,
+                "initial_losses":initial_losses,
                 "average_train_loss":average_train_loss,
                 "average_test_loss":average_test_loss,
                 "LOSS":LOSS

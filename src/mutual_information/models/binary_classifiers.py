@@ -17,9 +17,9 @@ class BaseBinaryClassifier(nn.Module):
 
     def forward(self, x):
         x = torch.relu(self.layer1(x))
-        if self.output_transformation_str is "sigmoid":
+        if self.output_transformation_str == "sigmoid":
             x = torch.sigmoid(self.layer2(x))
-        elif self.output_transformation_str is "identity":
+        elif self.output_transformation_str == "identity":
             x = self.layer2(x)
         else:
             raise Exception("Transformation not Implemented!")

@@ -43,7 +43,7 @@ class DynamicMutualInformationNaiveConfig:
 
     # all configs ---------------------------------------------------------------
     binary_classifier: BaseBinaryClassifierConfig = BaseBinaryClassifierConfig()
-    dataloader: ContrastiveMultivariateGaussianLoaderConfig = CorrelationCoefficientGaussianLoaderConfig()
+    dataloader: CorrelationCoefficientGaussianLoaderConfig = CorrelationCoefficientGaussianLoaderConfig()
     trainer: DynamicNaiveMITrainerConfig = DynamicNaiveMITrainerConfig()
     experiment_files:MIExperimentsFiles = None
 
@@ -77,7 +77,7 @@ class DynamicMutualInformationNaiveConfig:
         self.save_config()
 
     def align_configurations(self):
-        self.binary_classifier.input_size = self.dataloader.dimensions_per_variable*self.dataloader.number_of_variables
+        self.binary_classifier.input_size = 2
         if self.trainer.loss_type == "mine":
             self.binary_classifier.output_transformation = "identity"
         elif self.trainer.loss_type == "contrastive":

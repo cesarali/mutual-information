@@ -195,7 +195,7 @@ class CorrelationCoefficientGaussianLoaderConfig:
 
     number_of_time_steps: int = 10
     batch_size: int = 32
-    sample_size: int = 300
+    sample_size: int = 2000
     delete_data:bool = False
 
     def __post_init__(self):

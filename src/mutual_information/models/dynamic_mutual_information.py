@@ -13,7 +13,7 @@ from mutual_information.configs.dynamic_mi_naive_config import DynamicMutualInfo
 
 # models
 from mutual_information.models.binary_classifiers import BaseBinaryClassifier
-from mutual_information.data.dataloaders import ContrastiveMultivariateGaussianLoader
+from mutual_information.data.dataloaders import CorrelationCoefficientGaussianLoader
 
 EPSILON = 1e-12
 
@@ -24,15 +24,18 @@ class DynamicMutualInformationNaiveEstimator:
 
     """
     binary_classifier: BaseBinaryClassifier = None
-    dataloader: ContrastiveMultivariateGaussianLoader = None
+    dataloader: CorrelationCoefficientGaussianLoader = None
 
     def create_new_from_config(self, config:DynamicMutualInformationNaiveConfig, device=torch.device("cpu")):
         self.config = config
         self.config.initialize_new_experiment()
 
         self.dataloader = load_dataloader(self.config)
-        self.binary_classifier = load_binary_classifier(self.config)
-        self.binary_classifier.to(device)
+        self.classifier_per_time = []
+        for time_index in range(self.dataloader.number_of_time_steps):
+            binary_classifier = load_binary_classifier(self.config)
+            binary_classifier.to(device)
+            self.classifier_per_time.append(binary_classifier)
 
     def load_results_from_directory(self,
                                     experiment_name='mi',
