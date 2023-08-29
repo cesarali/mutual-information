@@ -2,14 +2,14 @@ import os
 import torch
 
 from pathlib import Path
-from pprint import pprint
 from torch import matmul as m
-import torch.nn.functional as F
 from torch.distributions import MultivariateNormal
+from torch.distributions import Normal
+
 
 from abc import ABC
 from torch.utils.data import TensorDataset,Dataset,DataLoader,random_split
-from typing import Union,Tuple,List
+from mutual_information.utils.covariance_functions import copy_upper_diagonal_values
 
 class BasicDataSet(Dataset):
     def __init__(self, data):
@@ -111,6 +111,15 @@ class ContrastiveMultivariateGaussianLoader(BaseDataLoader):
         sample = self.obtain_sample()
         self.define_dataset_and_dataloaders(sample,batch_size=self.batch_size)
 
+    def set_parameters(self,parameters):
+        self.mean_1 = parameters["mean_1"]
+        self.mean_2 = parameters["mean_2"]
+        self.mean_full = parameters["mean_full"]
+        self.covariance_1 = parameters["covariance_1"]
+        self.covariance_2 = parameters["covariance_2"]
+        self.covariance_full = parameters["covariance_full"]
+
+
     def obtain_sample(self):
         if self.dataloader_data_dir_file_path.exists():
             if self.delete_data:
@@ -122,12 +131,7 @@ class ContrastiveMultivariateGaussianLoader(BaseDataLoader):
                 parameters_and_data = torch.load(self.dataloader_data_dir_file_path)
                 sample = parameters_and_data["sample"]
                 parameters = parameters_and_data["parameters"]
-                self.mean_1 = parameters["mean_1"]
-                self.mean_2 = parameters["mean_2"]
-                self.mean_full = parameters["mean_full"]
-                self.covariance_1 = parameters["covariance_1"]
-                self.covariance_2 = parameters["covariance_2"]
-                self.covariance_full = parameters["covariance_full"]
+                self.set_parameters(parameters)
         else:
             if not self.dataloader_data_dir_path.exists():
                 os.makedirs(self.dataloader_data_dir_path)
@@ -182,4 +186,94 @@ class ContrastiveMultivariateGaussianLoader(BaseDataLoader):
                                     "covariance_full":self.covariance_full}
 
         return distributions_parameters,sample_join,sample_indendent
+
+@dataclass
+class CorrelationCoefficientGaussianLoaderConfig:
+    name:str = "CorrelationCoefficientGaussianLoader"
+    data_set:str = "correlation_timeseries_example"
+    dataloader_data_dir:str = None
+
+    number_of_time_steps: int = 10
+    batch_size: int = 32
+    sample_size: int = 300
+    delete_data:bool = False
+
+    def __post_init__(self):
+        from mutual_information import data_path
+        self.dataloader_data_dir = os.path.join(data_path,"raw",self.name)
+        self.dataloader_data_dir_file = os.path.join(self.dataloader_data_dir,self.data_set+".tr")
+
+class CorrelationCoefficientGaussianLoader(BaseDataLoader):
+    """
+
+    """
+    def __init__(self,config:CorrelationCoefficientGaussianLoaderConfig):
+        self.config = config
+        self.sample_size = config.sample_size
+        self.batch_size = config.batch_size
+        self.delete_data = config.delete_data
+        self.number_of_time_steps = config.number_of_time_steps
+
+        self.dataloader_data_dir = config.dataloader_data_dir
+        self.dataloader_data_dir_path = Path(self.dataloader_data_dir)
+        self.dataloader_data_dir_file_path = Path(config.dataloader_data_dir_file)
+
+        # Set the mean and covariance matrix
+        self.mu = torch.zeros(self.number_of_time_steps)
+        sample = self.obtain_sample()
+        self.define_dataset_and_dataloaders(sample,batch_size=self.batch_size)
+
+    def sample(self):
+        all_rho_values = self.obtain_rolling_correlations(self.number_of_time_steps)
+        covariance = copy_upper_diagonal_values(all_rho_values)
+        independent_covariace = torch.diag(covariance)
+
+        mu = torch.zeros(self.number_of_time_steps)
+        join_distribution = MultivariateNormal(mu, covariance)
+        independent_distribution = Normal(mu,independent_covariace)
+
+        join_sample = join_distribution.sample((self.sample_size,))
+        independent_sample = independent_distribution.sample((self.sample_size,))
+        parameters = {"rho_values":self.rho_values}
+
+        return parameters,join_sample,independent_sample
+
+    def set_parameters(self,parameters):
+        self.rho_values = parameters["rho_values"]
+
+    def obtain_sample(self):
+        if self.dataloader_data_dir_file_path.exists():
+            if self.delete_data:
+                parameters, sample_join, sample_indendent = self.sample()
+                sample = {"join": sample_join, "independent": sample_indendent}
+                torch.save({"sample":sample,"parameters":parameters},
+                           self.dataloader_data_dir_file_path)
+            else:
+                parameters_and_data = torch.load(self.dataloader_data_dir_file_path)
+                sample = parameters_and_data["sample"]
+                parameters = parameters_and_data["parameters"]
+                self.set_parameters(parameters)
+        else:
+            if not self.dataloader_data_dir_path.exists():
+                os.makedirs(self.dataloader_data_dir_path)
+            parameters, sample_join, sample_indendent = self.sample()
+            sample = {"join": sample_join,
+                      "independent": sample_indendent}
+            torch.save({"sample":sample,"parameters":parameters}, self.dataloader_data_dir_file_path)
+        return sample
+
+    def obtain_rolling_correlations(self,number_of_time_steps=4):
+        self.rho_values = torch.linspace(0., 1., number_of_time_steps)
+        self.rho_values = torch.flip(self.rho_values, dims=(0,))
+        all_rho_values = []
+        for time_step in range(number_of_time_steps):
+            column = torch.zeros(number_of_time_steps)
+            rolled_rhos = torch.roll(self.rho_values, shifts=time_step)
+            column[time_step:] = rolled_rhos[time_step:]
+            all_rho_values.append(column)
+        all_rho_values = torch.vstack(all_rho_values)
+        return all_rho_values
+
+    def mutual_information(self):
+        return -.5*torch.log(1.-(self.rho_values)**2.)
 
